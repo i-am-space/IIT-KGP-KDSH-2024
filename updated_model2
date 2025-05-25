@@ -1,0 +1,177 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+from sklearn.impute import SimpleImputer
+
+window_size = 20
+btc_file_path = r'C:\Users\rahul\Downloads\BTC-USD.csv'
+btc_data = pd.read_csv(btc_file_path)
+btc_data['Date'] = pd.to_datetime(btc_data['Date'])
+btc_data.set_index('Date', inplace=True)
+
+window_size_bollinger = 15
+std_dev_multiplier_bollinger = 1.5
+btc_data['moving_avg'] = btc_data['Close'].rolling(window=window_size_bollinger).mean()
+btc_data['upper_band'] = btc_data['moving_avg'] + (std_dev_multiplier_bollinger * btc_data['Close'].rolling(window=window_size_bollinger).std())
+btc_data['lower_band'] = btc_data['moving_avg'] - (std_dev_multiplier_bollinger * btc_data['Close'].rolling(window=window_size_bollinger).std())
+
+# Add Moving Average and Fibonacci Retracement as additional indicators
+btc_data['sma'] = btc_data['Close'].rolling(window=50).mean()
+btc_data['fibonacci_level'] = (btc_data['Close'].max() - btc_data['Close'].min()) * 0.382 + btc_data['Close'].min()
+
+# Calculate VWAP
+btc_data['vwap'] = (btc_data['Close'] * btc_data['Volume']).cumsum() / btc_data['Volume'].cumsum()
+
+# Calculate Stochastic RSI
+def calculate_stochastic_rsi(data, window=14):
+    close = data['Close']
+    rsi = (close - close.rolling(window=window).min()) / (close.rolling(window=window).max() - close.rolling(window=window).min())
+    stoch_rsi = (rsi - rsi.rolling(window=window).mean()) / rsi.rolling(window=window).std()
+    return stoch_rsi
+
+btc_data['stoch_rsi'] = calculate_stochastic_rsi(btc_data)
+
+# Calculate MACD and RSI
+macd = MACD(btc_data['Close'])
+btc_data['macd'] = macd.macd()
+btc_data['signal_line'] = macd.macd_signal()
+
+# Calculate RSI
+rsi_indicator = RSIIndicator(close=btc_data['Close'])
+btc_data['rsi'] = rsi_indicator.rsi()
+
+# Ensemble Strategy
+btc_data['ensemble_signal'] = np.where(
+    (
+        (btc_data['Close'] <= btc_data['lower_band']) & (btc_data['stoch_rsi'] < -0.9) |
+        (btc_data['macd'] > btc_data['signal_line']) & (btc_data['rsi'] < 35) |
+        (btc_data['Close'] > btc_data['sma']) & (btc_data['Close'] > btc_data['fibonacci_level'])
+    ), 1, 0
+)
+
+
+# Generate Buy and Sell Signals based on VWAP and Stochastic RSI
+buy_condition = (btc_data['Close'] > btc_data['vwap']) & (btc_data['stoch_rsi'] < -0.8)
+sell_condition = (btc_data['Close'] < btc_data['vwap']) & (btc_data['stoch_rsi'] > 0.8)
+
+btc_data['buy_signal'] = np.where(buy_condition, 1, 0)
+btc_data['sell_signal'] = np.where(sell_condition, -1, 0)
+btc_data['position'] = btc_data['buy_signal'] + btc_data['sell_signal']
+
+# Implement Dynamic Risk Management (customize)
+risk_percentage = 0.01
+btc_data['volatility'] = btc_data['Close'].pct_change().rolling(window=window_size_bollinger).std()
+btc_data['dynamic_risk'] = risk_percentage * btc_data['volatility'].shift(1)  # Adjust the factor as needed
+btc_data['position_size_dynamic'] = (btc_data['dynamic_risk'] / btc_data['Close']) * 0.02  # Assuming 2% risk per trade
+
+# Implement Backtesting with Dynamic Risk Management
+btc_data['returns_dynamic'] = btc_data['Close'].pct_change()
+btc_data['strategy_returns_dynamic'] = btc_data['position_size_dynamic'].shift(1) * btc_data['returns_dynamic']
+btc_data['cumulative_strategy_returns_dynamic'] = (1 + btc_data['strategy_returns_dynamic']).cumprod()
+
+btc_data.to_csv(btc_file_path)
+
+# Load Historical Data for S&P 500 (replace 'SP500.csv' with the actual filename)
+sp500_file_path = r'C:\Users\rahul\OneDrive\Desktop\iit kgp hackathon\sp500_historical_data.csv'
+sp500_data = pd.read_csv(sp500_file_path)
+sp500_data['Date'] = pd.to_datetime(sp500_data['Date'])
+sp500_data.set_index('Date', inplace=True)
+
+# Calculate daily returns and cumulative returns
+sp500_data['sp500_returns_percentage'] = sp500_data['Close'].pct_change()
+sp500_data['cumulative_sp500_returns'] = (1 + sp500_data['sp500_returns_percentage']).cumprod()
+
+# Save the updated DataFrame back to the CSV file
+sp500_data.to_csv(sp500_file_path)
+
+# Make sure the following lines match your column names
+sp500_data['sp500_returns_percentage'] = sp500_data['Close'].pct_change()
+sp500_data['cumulative_sp500_returns'] = (1 + sp500_data['sp500_returns_percentage']).cumprod()
+
+# Check for NaN or infinite values in S&P 500 returns
+nan_inf_mask = sp500_data['sp500_returns_percentage'].isnull() | np.isinf(sp500_data['sp500_returns_percentage'])
+if nan_inf_mask.any():
+    print("\nWarning: S&P 500 Returns contain NaN or infinite values.")
+    print("Rows with NaN or infinite values in S&P 500 Returns:")
+    print(sp500_data.loc[nan_inf_mask, ['sp500_returns_percentage']])
+
+    # Fill NaN values in S&P 500 returns with the mean of non-NaN values
+    sp500_data['sp500_returns_percentage'].fillna(sp500_data['sp500_returns_percentage'].mean(), inplace=True)
+
+    # Re-calculate cumulative returns
+    sp500_data['cumulative_sp500_returns'] = (1 + sp500_data['sp500_returns_percentage']).cumprod()
+
+    # Re-calculate performance metrics for S&P 500
+    sp500_sharpe_ratio = (sp500_data['sp500_returns_percentage'].mean() / sp500_data['sp500_returns_percentage'].std()) * np.sqrt(252)
+    sp500_sortino_ratio = (sp500_data['sp500_returns_percentage'].mean() / sp500_data[sp500_data['sp500_returns_percentage'] < 0]['sp500_returns_percentage'].std()) * np.sqrt(252)
+    sp500_max_drawdown = -(sp500_data['cumulative_sp500_returns'] / sp500_data['cumulative_sp500_returns'].cummax() - 1).min()
+
+    # Print updated performance metrics for S&P 500
+    print("\nUpdated S&P 500 Metrics:")
+    print("Sharpe Ratio (S&P 500):", sp500_sharpe_ratio)
+    print("Sortino Ratio (S&P 500):", sp500_sortino_ratio)
+    print("Max Drawdown (S&P 500):", sp500_max_drawdown)
+else:
+    # Performance Metrics for S&P 500
+    sp500_sharpe_ratio = (sp500_data['sp500_returns_percentage'].mean() / sp500_data['sp500_returns_percentage'].std()) * np.sqrt(252)
+    sp500_sortino_ratio = (sp500_data['sp500_returns_percentage'].mean() / sp500_data[sp500_data['sp500_returns_percentage'] < 0]['sp500_returns_percentage'].std()) * np.sqrt(252)
+    sp500_max_drawdown = -(sp500_data['cumulative_sp500_returns'] / sp500_data['cumulative_sp500_returns'].cummax() - 1).min()
+
+    # Print Performance Metrics for S&P 500
+    print("\nS&P 500 Metrics:")
+    print("Sharpe Ratio (S&P 500):", sp500_sharpe_ratio)
+    print("Sortino Ratio (S&P 500):", sp500_sortino_ratio)
+    print("Max Drawdown (S&P 500):", sp500_max_drawdown)
+
+# Print Performance Metrics for BTC
+btc_sharpe_ratio = (btc_data['strategy_returns_dynamic'].mean() / btc_data['strategy_returns_dynamic'].std()) * np.sqrt(252)
+btc_sortino_ratio = (btc_data['strategy_returns_dynamic'].mean() / btc_data[btc_data['strategy_returns_dynamic'] < 0]['strategy_returns_dynamic'].std()) * np.sqrt(252)
+btc_max_drawdown = -(btc_data['cumulative_strategy_returns_dynamic'] / btc_data['cumulative_strategy_returns_dynamic'].cummax() - 1).min()
+
+
+# Print Performance Metrics for BTC
+print("\nBTC Metrics:")
+print("Sharpe Ratio (BTC):", btc_sharpe_ratio)
+print("Sortino Ratio (BTC):", btc_sortino_ratio)
+print("Max Drawdown (BTC):", btc_max_drawdown)
+
+
+# Print Percentage Returns for BTC and S&P 500
+btc_percentage_return = btc_data['cumulative_strategy_returns_dynamic'].iloc[-1] - 1
+sp500_percentage_return = sp500_data['cumulative_sp500_returns'].iloc[-1] - 1
+
+print("\nPercentage Returns for BTC and S&P 500:")
+print("BTC Percentage Return:", btc_percentage_return)
+print("S&P 500 Percentage Return:", sp500_percentage_return)
+
+# Plot Results for BTC and S&P 500
+fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(12, 15), sharex=True)
+
+ax1.plot(btc_data.index, btc_data['Close'], label='BTC Close Price', color='blue')
+ax1.plot(btc_data.index, btc_data['upper_band'], label='Upper Bollinger Band', color='orange', linestyle='--')
+ax1.plot(btc_data.index, btc_data['lower_band'], label='Lower Bollinger Band', color='orange', linestyle='--')
+ax1.set_ylabel('Price')
+ax1.legend()
+
+ax2.plot(btc_data.index, btc_data['Close'], label='BTC Close Price', color='blue')
+ax2.plot(btc_data[btc_data['buy_signal'] == 1].index, btc_data['Close'][btc_data['buy_signal'] == 1], '^', markersize=10, color='green', label='Buy Signal')
+ax2.plot(btc_data[btc_data['sell_signal'] == -1].index, btc_data['Close'][btc_data['sell_signal'] == -1], 'v', markersize=10, color='red', label='Sell Signal')
+
+ax3.plot(btc_data.index, btc_data['cumulative_strategy_returns_dynamic'], label='Cumulative BTC Strategy Returns', color='purple')
+ax3.plot(sp500_data.index, sp500_data['cumulative_sp500_returns'], label='Cumulative S&P 500 Returns', color='brown')
+ax3.set_ylabel('Cumulative Returns')
+ax3.legend()
+
+ax4.plot(btc_data.index, btc_data['dynamic_risk'], label='Dynamic Risk', color='purple', linestyle='--')
+ax4.set_ylabel('Dynamic Risk')
+ax4.legend()
+
+ax5.plot(btc_data.index, btc_data['strategy_returns_dynamic'] * 100, label='BTC Percentage Returns (Dynamic)', color='purple')
+ax5.plot(sp500_data.index, sp500_data['cumulative_sp500_returns'] * 100, label='S&P 500 Percentage Returns', color='brown')
+ax5.set_xlabel('Date')
+ax5.set_ylabel('Percentage Returns')
+ax5.legend()
+
+plt.show()

@@ -1,0 +1,66 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load Historical Data(yahoo finance csv)
+file_path = r'C:\Users\rahul\Downloads\BTC-USD.csv'  # Path to your CSV file
+data = pd.read_csv(file_path)
+data['Date'] = pd.to_datetime(data['Date'])
+data.set_index('Date', inplace=True)
+
+# Calculate Bollinger Bands(upper and lower deviation from middle band)
+window_size = 20
+std_dev_multiplier = 2
+data['moving_avg'] = data['Close'].rolling(window=window_size).mean()
+data['upper_band'] = data['moving_avg'] + (std_dev_multiplier * data['Close'].rolling(window=window_size).std())
+data['lower_band'] = data['moving_avg'] - (std_dev_multiplier * data['Close'].rolling(window=window_size).std())
+
+# Generate Buy and Sell Signals
+data['buy_signal'] = np.where(data['Close'] <= data['lower_band'], 1, 0)
+data['sell_signal'] = np.where(data['Close'] >= data['upper_band'], -1, 0)
+data['position'] = data['buy_signal'] + data['sell_signal']
+
+# Implement Risk Management
+stop_loss_percentage = 0.02
+risk_per_trade = 0.02
+data['stop_loss'] = data['position'].shift(1) * (1 - stop_loss_percentage)
+data['position_size'] = (data['stop_loss'] / data['Close']) * risk_per_trade
+
+# Implement Backtesting with Risk Management
+data['returns'] = data['Close'].pct_change()
+data['strategy_returns'] = data['position_size'].shift(1) * data['returns']
+data['cumulative_strategy_returns'] = (1 + data['strategy_returns']).cumprod()
+
+# Performance Metrics
+sharpe_ratio = (data['strategy_returns'].mean() / data['strategy_returns'].std()) * np.sqrt(252)  # Assuming 252 trading days in a year
+sortino_ratio = (data['strategy_returns'].mean() / data[data['strategy_returns'] < 0]['strategy_returns'].std()) * np.sqrt(252)
+max_drawdown = -(data['cumulative_strategy_returns'] / data['cumulative_strategy_returns'].cummax() - 1).min()
+
+print("Sharpe Ratio:", sharpe_ratio)
+print("Sortino Ratio:", sortino_ratio)
+print("Max Drawdown:", max_drawdown)
+
+# Plot Results
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+# Plot Close Prices and Bollinger Bands
+ax1.plot(data.index, data['Close'], label='Close Price', color='blue')
+ax1.plot(data.index, data['upper_band'], label='Upper Bollinger Band', color='orange', linestyle='--')
+ax1.plot(data.index, data['lower_band'], label='Lower Bollinger Band', color='orange', linestyle='--')
+ax1.set_ylabel('Price')
+ax1.legend()
+
+# Plot Buy/Sell Signals
+ax2.plot(data.index, data['Close'], label='Close Price', color='blue')
+ax2.plot(data[data['buy_signal'] == 1].index, data['Close'][data['buy_signal'] == 1], '^', markersize=10, color='green', label='Buy Signal')
+ax2.plot(data[data['sell_signal'] == -1].index, data['Close'][data['sell_signal'] == -1], 'v', markersize=10, color='red', label='Sell Signal')
+ax2.set_ylabel('Price')
+ax2.legend()
+
+# Plot Cumulative Strategy Returns
+ax3.plot(data.index, data['cumulative_strategy_returns'], label='Cumulative Strategy Returns', color='purple')
+ax3.set_xlabel('Date')
+ax3.set_ylabel('Cumulative Returns')
+ax3.legend()
+
+plt.show()

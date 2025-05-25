@@ -1,0 +1,113 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load Bitcoin data
+btc = pd.read_csv('BTC-USD.csv')
+btc['Date'] = pd.to_datetime(btc['Date']) 
+btc = btc.set_index('Date')
+btc['log_ret'] = np.log(btc['Adj Close']).diff()
+btc['variance'] = btc['log_ret'].rolling(180).var()
+btc = btc['2018':'2022-01-31']
+
+# Display summary statistics
+max_adj_close = btc['Adj Close'].max()
+min_adj_close = btc['Adj Close'].min()
+print(btc)
+print("Max Adj. Close Price = ", max_adj_close)
+print("Min Adj. Close Price = ", min_adj_close)
+
+# Plot BTC-USD Adj. Close Price History
+plt.figure(figsize=(20.5, 12.5))
+plt.plot(btc['Adj Close'], label='BTC/USDT')
+plt.title('BTC-USDT Adj. Close Price History')
+plt.xlabel('01 Jan 2018 - 31st Jan 2022')
+plt.ylabel('Adj. Close Price USD ($)')
+plt.legend(loc='upper left')
+plt.show()
+
+# Moving Averages
+Window_lower = 12
+Window_upper = 45
+SMA_short = btc['Adj Close'].rolling(window=Window_lower).mean()
+SMA_long = btc['Adj Close'].rolling(window=Window_upper).mean()
+
+# Plot Moving Averages
+plt.figure(figsize=(20.5, 12.5))
+plt.plot(btc['Adj Close'], label='BTC-USDT')
+plt.plot(SMA_short, label='STMA')
+plt.plot(SMA_long, label='LTMA')
+plt.title('BTC-USDT Adj. Close Price History with Moving Averages')
+plt.xlabel('02 Oct 2006 - 30th Dec 2011')
+plt.ylabel('Adj. Close Price USD ($)')
+plt.legend(loc='upper left')
+plt.show()
+
+# ATR calculation
+btc['ATR'] = ATR = pd.concat([btc.High.sub(btc.Low), btc.High.sub(btc.Close.shift()).abs(), btc.Low.sub(btc.Close.shift()).abs()], axis=1).max(1).ewm(span=14).mean()
+
+# Buy and Sell signals
+moving_avg = pd.DataFrame()
+moving_avg['BTC'] = btc['Adj Close']
+moving_avg['STMA'] = SMA_short
+moving_avg['LTMA'] = SMA_long
+moving_avg['ATR'] = btc['ATR']
+
+def investment_signal(data):
+    sigPriceToBuy = []
+    sigPriceToSell = []
+    isCross = -1
+    for i in range(len(data)):
+        if data['STMA'][i] > data['LTMA'][i]:
+            if isCross != 1:
+                sigPriceToBuy.append(data['BTC'][i])
+                sigPriceToSell.append(np.nan)
+                isCross = 1
+            else:
+                sigPriceToBuy.append(np.nan)
+                sigPriceToSell.append(np.nan)
+        elif data['STMA'][i] < data['LTMA'][i]:
+            if isCross != 0:
+                sigPriceToBuy.append(np.nan)
+                sigPriceToSell.append(data['BTC'][i])
+                isCross = 0
+            else:
+                sigPriceToBuy.append(np.nan)
+                sigPriceToSell.append(np.nan)
+        else:
+            sigPriceToBuy.append(np.nan)
+            sigPriceToSell.append(np.nan)
+    return (sigPriceToBuy, sigPriceToSell)
+
+buy_sell = investment_signal(moving_avg)
+moving_avg['Buy_Signal_Price'] = buy_sell[0]
+moving_avg['Sell_Signal_Price'] = buy_sell[1]
+
+# Plot Buy and Sell signals
+plt.figure(figsize=(20.5, 12.5))
+plt.plot(btc['Adj Close'], label='BTC-USDT', alpha=0.35)
+plt.plot(SMA_short, label='STMA', alpha=0.35)
+plt.plot(SMA_long, label='LTMA', alpha=0.35)
+plt.scatter(moving_avg.index, moving_avg['Buy_Signal_Price'], label='Buy', marker="^", color="green", s=100)
+plt.scatter(moving_avg.index, moving_avg['Sell_Signal_Price'], label='Sell', marker="v", color="red", s=100)
+plt.title('BTC-USDT Adj. Close Price History - Buy & Sell Signals')
+plt.xlabel('02 Oct 2006 - 30th Dec 2011')
+plt.ylabel('Adj. Close Price USD ($)')
+plt.legend(loc='upper left')
+plt.show()
+
+# Calculate Profit and Losses
+def PnL(data):
+    profit = 0
+    loss = 0
+    spent = 0
+    gained = 0
+    for i in range(len(data)):
+        if not np.isnan(data['Buy_Signal_Price'][i]):
+            spent += data['Buy_Signal_Price'][i]
+        if not np.isnan(data['Sell_Signal_Price'][i]):
+            gained += data['Sell_Signal_Price'][i]
+    return profit, loss, spent, gained
+
+PnL_result = PnL(moving_avg.dropna(subset=['Buy_Signal_Price', 'Sell_Signal_Price'], how='all'))
+print(f"Profit: {PnL_result[0]}, Loss: {PnL_result[1]}, Total Spent: {PnL_result[2]}, Total Gained: {PnL_result[3]}")

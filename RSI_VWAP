@@ -1,0 +1,91 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load Historical Data
+btc_file_path = r'C:\Users\rahul\Downloads\BTC-USD.csv' 
+btc_data = pd.read_csv(btc_file_path)
+btc_data['Date'] = pd.to_datetime(btc_data['Date'])
+btc_data.set_index('Date', inplace=True)
+
+# Calculate VWAP
+btc_data['vwap'] = (btc_data['Close'] * btc_data['Volume']).cumsum() / btc_data['Volume'].cumsum()
+
+# Calculate Stochastic RSI
+def calculate_stochastic_rsi(data, window=14):
+    close = data['Close']
+    rsi = (close - close.rolling(window=window).min()) / (close.rolling(window=window).max() - close.rolling(window=window).min())
+    stoch_rsi = (rsi - rsi.rolling(window=window).mean()) / rsi.rolling(window=window).std()
+    return stoch_rsi
+
+btc_data['stoch_rsi'] = calculate_stochastic_rsi(btc_data)
+
+# Generate Buy and Sell Signals based on VWAP and Stochastic RSI
+buy_condition = (btc_data['Close'] > btc_data['vwap']) & (btc_data['stoch_rsi'] < -0.8)  # Customize these conditions
+sell_condition = (btc_data['Close'] < btc_data['vwap']) & (btc_data['stoch_rsi'] > 0.8)  # Customize these conditions
+
+btc_data['buy_signal'] = np.where(buy_condition, 1, 0)
+btc_data['sell_signal'] = np.where(sell_condition, -1, 0)
+btc_data['position'] = btc_data['buy_signal'] + btc_data['sell_signal']
+
+# Implement Risk Management (customize)
+stop_loss_percentage = 0.02
+risk_per_trade = 0.02
+btc_data['stop_loss'] = btc_data['position'].shift(1) * (1 - stop_loss_percentage)
+btc_data['position_size'] = (btc_data['stop_loss'] / btc_data['Close']) * risk_per_trade
+
+# Implement Backtesting with Risk Management
+btc_data['returns'] = btc_data['Close'].pct_change()
+btc_data['strategy_returns'] = btc_data['position_size'].shift(1) * btc_data['returns']
+btc_data['cumulative_strategy_returns'] = (1 + btc_data['strategy_returns']).cumprod()
+
+# Load Historical Data for S&P 500
+sp500_file_path = r'C:\Users\rahul\OneDrive\Desktop\iit kgp hackathon\sp500_data.csv'  
+sp500_data = pd.read_csv(sp500_file_path)
+sp500_data['Date'] = pd.to_datetime(sp500_data['Date'])
+sp500_data.set_index('Date', inplace=True)
+
+# Calculate VWAP for S&P 500
+sp500_data['vwap'] = (sp500_data['Close'] * sp500_data['Volume']).cumsum() / sp500_data['Volume'].cumsum()
+
+# Generate Buy and Sell Signals based on VWAP for S&P 500 (customize conditions i think they are too strict)
+sp500_data['buy_signal'] = np.where(sp500_data['Close'] > sp500_data['vwap'], 1, 0)
+sp500_data['sell_signal'] = np.where(sp500_data['Close'] < sp500_data['vwap'], -1, 0)
+sp500_data['position'] = sp500_data['buy_signal'] + sp500_data['sell_signal']
+
+# Implement Backtesting without Risk Management for S&P 500
+sp500_data['returns'] = sp500_data['Close'].pct_change()
+sp500_data['strategy_returns'] = sp500_data['position'].shift(1) * sp500_data['returns']
+sp500_data['cumulative_strategy_returns'] = (1 + sp500_data['strategy_returns']).cumprod()
+
+# Plot Results for BTC and S&P 500
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+# Plot Close Prices and VWAP for BTC and S&P 500
+ax1.plot(btc_data.index, btc_data['Close'], label='BTC Close Price', color='blue')
+ax1.plot(btc_data.index, btc_data['vwap'], label='BTC VWAP', color='orange', linestyle='--')
+ax1.plot(sp500_data.index, sp500_data['Close'], label='S&P 500 Close Price', color='green')
+ax1.plot(sp500_data.index, sp500_data['vwap'], label='S&P 500 VWAP', color='red', linestyle='--')
+ax1.set_ylabel('Price')
+ax1.legend()
+
+# Plot Buy/Sell Signals for BTC and S&P 500
+ax2.plot(btc_data.index, btc_data['Close'], label='BTC Close Price', color='blue')
+ax2.plot(btc_data[btc_data['buy_signal'] == 1].index, btc_data['Close'][btc_data['buy_signal'] == 1], '^', markersize=10, color='green', label='BTC Buy Signal')
+ax2.plot(btc_data[btc_data['sell_signal'] == -1].index, btc_data['Close'][btc_data['sell_signal'] == -1], 'v', markersize=10, color='red', label='BTC Sell Signal')
+
+ax2.plot(sp500_data.index, sp500_data['Close'], label='S&P 500 Close Price', color='orange')
+ax2.plot(sp500_data[sp500_data['buy_signal'] == 1].index, sp500_data['Close'][sp500_data['buy_signal'] == 1], '^', markersize=10, color='purple', label='S&P 500 Buy Signal')
+ax2.plot(sp500_data[sp500_data['sell_signal'] == -1].index, sp500_data['Close'][sp500_data['sell_signal'] == -1], 'v', markersize=10, color='brown', label='S&P 500 Sell Signal')
+
+ax2.set_ylabel('Price')
+ax2.legend()
+
+# Plot Cumulative Strategy Returns for BTC and S&P 500
+ax3.plot(btc_data.index, btc_data['cumulative_strategy_returns'], label='Cumulative BTC Strategy Returns', color='purple')
+ax3.plot(sp500_data.index, sp500_data['cumulative_strategy_returns'], label='Cumulative S&P 500 Strategy Returns', color='brown')
+ax3.set_xlabel('Date')
+ax3.set_ylabel('Cumulative Returns')
+ax3.legend()
+
+plt.show()
