@@ -11,9 +11,9 @@ Welcome to our submission for the Data Science Hackathon conducted by IIT-Kharag
 - **whit_model.ipynb:** Final XGBoost model for BTC-USDT returns. (The main final model)
 
 ### Python Scripts
-- **blek_goldcross_final.py:** Python script related to "blek_goldcross_final". (Need to explore the content and provide a brief description).
-- **blek_unsupervisedmode_final.py:** Python script related to "blek_unsupervisedmode_final". (Need to explore the content and provide a brief description).
-- **bollinger_bands.py:** Python script related to Bollinger Bands.
+- **blek_goldcross_final.py:** Golden crossover strategy. Needless to say, not the finest performance and not my finest moment.
+- **blek_unsupervisedmode_final.py:** Unsupervised learning algo, not the greatest performance either.
+- **bollinger_bands.py:** Python script for a Bollinger Bands strategy (this is getting embarassing now)
 - **updated_model, updated_model2, updated_model3, updated_model4, updated_model5:** Folders with iterations and improvements on the XGBoost model for BTC-USDT returns.
 
 ### Data
@@ -48,7 +48,4 @@ This **BitcoinBabesUwU.ipynb** represents our final model for predicting BTC-USD
 1. Rahul Gopalan
 2. Vishal Rao
 
-
-
-Feel free to explore, experiment, and contribute to enhance the performance of our models.
-
+I'm absolutely certain there are several people out there that can do FAR better than we did, and we do welcome you to try and let us know the results!
